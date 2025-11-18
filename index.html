@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="overlay-container">
+        <div class="header">
+            <h2>📈 Trading Assistant</h2>
+            <button class="close-btn" id="closeBtn">×</button>
+        </div>
+        
+        <div class="content">
+            <div class="input-section">
+                <input 
+                    type="text" 
+                    id="tickerInput" 
+                    placeholder="Enter stock ticker (e.g., AAPL)"
+                    autocomplete="off"
+                >
+                <button id="analyzeBtn">Analyze</button>
+            </div>
+
+            <div class="watch-mode-section">
+                <label class="watch-mode-toggle">
+                    <input type="checkbox" id="watchModeToggle">
+                    <span class="toggle-slider"></span>
+                    <span class="toggle-label">Watch Mode (Auto-detect tickers)</span>
+                </label>
+                <p class="watch-mode-status" id="watchModeStatus">Off</p>
+            </div>
+
+            <div class="shortcuts-info">
+                <p><strong>Shortcuts:</strong></p>
+                <p>⌘+Shift+W: Toggle watch mode</p>
+                <p>⌘+Shift+C: Capture ticker from clipboard</p>
+                <p>⌘+Shift+T: Toggle overlay</p>
+                <p class="watch-mode-hint">💡 In watch mode, just copy any ticker symbol and a popup will appear!</p>
+            </div>
+
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Fetching and analyzing news...</p>
+            </div>
+
+            <div id="results" class="results hidden">
+                <h3 id="tickerTitle"></h3>
+                <div id="summary"></div>
+                <div id="articles"></div>
+            </div>
+
+            <div id="error" class="error hidden"></div>
+        </div>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>
+
