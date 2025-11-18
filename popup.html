@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Popup</title>
+    <link rel="stylesheet" href="popup-styles.css">
+</head>
+<body>
+    <div class="popup-container">
+        <div class="popup-header">
+            <h3 id="popupTicker">Loading...</h3>
+            <button class="close-popup-btn" id="closePopupBtn">×</button>
+        </div>
+        
+        <div class="popup-content">
+            <div id="popupLoading" class="popup-loading">
+                <div class="spinner-small"></div>
+                <p>Fetching news...</p>
+            </div>
+
+            <div id="popupSummary" class="popup-summary hidden"></div>
+            
+            <div id="popupArticles" class="popup-articles hidden"></div>
+        </div>
+    </div>
+    <script src="popup-renderer.js"></script>
+</body>
+</html>
+
