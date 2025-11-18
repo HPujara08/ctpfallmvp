@@ -1,0 +1,26 @@
+{
+  "name": "trading-assistant",
+  "version": "1.0.0",
+  "description": "Trading assistant with news summaries overlay",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder"
+  },
+  "keywords": ["trading", "news", "overlay", "electron"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "@huggingface/inference": "^2.6.4",
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5"
+  }
+}
+
