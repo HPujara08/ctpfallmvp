@@ -2,15 +2,6 @@
 
 A desktop application that provides real-time news summaries for stock tickers. The app features an Electron overlay that floats above your trading applications, allowing you to quickly get AI-summarized news for any stock.
 
-## Features
-
-- 🖥️ **Electron Overlay**: Always-on-top window that floats above other applications
-- 📊 **Ticker Analysis**: Enter or capture stock tickers to get instant news summaries
-- 📰 **Yahoo Finance Integration**: Fetches recent news articles from Yahoo Finance
-- 🤖 **AI Summarization**: Uses Hugging Face's `distilbart-cnn-12-6` model to summarize news
-- ⌨️ **Keyboard Shortcuts**: Quick access via global shortcuts
-- 🎨 **Modern UI**: Beautiful, transparent overlay with gradient design
-
 ## Installation
 
 1. **Install dependencies:**
