@@ -18,7 +18,7 @@ A desktop application that provides real-time news summaries for stock tickers. 
    HF_API_KEY=your-api-key-here
    ```
 
-## Usage
+## Usages
 
 1. **Start the application:**
    ```bash
