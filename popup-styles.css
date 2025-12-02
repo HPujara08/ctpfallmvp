@@ -99,6 +99,53 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+.popup-sentiment {
+    margin-bottom: 15px;
+}
+
+.sentiment-box-small {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 12px;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.sentiment-box-small.positive {
+    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.sentiment-box-small.negative {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.sentiment-box-small.neutral {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.sentiment-box-small h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.metrics-inline {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.metrics-inline span {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
 .popup-summary {
     background: rgba(255, 255, 255, 0.15);
     padding: 15px;

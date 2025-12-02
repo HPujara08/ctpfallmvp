@@ -220,6 +220,74 @@ body {
     text-align: center;
 }
 
+.sentiment-box {
+    background: rgba(255, 255, 255, 0.15);
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    backdrop-filter: blur(10px);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+.sentiment-box.positive {
+    border-color: rgba(16, 185, 129, 0.5);
+    background: rgba(16, 185, 129, 0.1);
+}
+
+.sentiment-box.negative {
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.sentiment-box.neutral {
+    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.sentiment-header {
+    margin-bottom: 15px;
+}
+
+.sentiment-header h4 {
+    margin-bottom: 5px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.sentiment-confidence {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.8);
+    margin-top: 5px;
+}
+
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 15px;
+}
+
+.metric-item {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 12px;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+.metric-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: white;
+}
+
 .summary-box {
     background: rgba(255, 255, 255, 0.15);
     padding: 20px;

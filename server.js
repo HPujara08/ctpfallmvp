@@ -3,12 +3,27 @@ const cors = require('cors');
 const axios = require('axios');
 const { HfInference } = require('@huggingface/inference');
 const cheerio = require('cheerio');
+const SentimentAnalyzer = require('./modules/sentiment-analyzer');
 
 const app = express();
 const PORT = 3001;
 
 // Initialize Hugging Face inference
 const hf = new HfInference(process.env.HF_API_KEY || null); // Optional API key for rate limits
+
+// Initialize Sentiment Analyzer
+const sentimentAnalyzer = new SentimentAnalyzer();
+
+// Train model on startup (async, non-blocking)
+sentimentAnalyzer.ensureTrained().then(() => {
+    console.log('✅ Sentiment analyzer ready');
+}).catch(err => {
+    console.error('⚠️ Sentiment analyzer training failed:', err.message);
+});
+
+// Cache for ticker analysis results (5 minutes TTL)
+const cache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 app.use(cors());
 app.use(express.json());
@@ -26,40 +41,49 @@ async function fetchYahooNews(ticker) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/rss+xml, application/xml, text/xml'
             },
-            timeout: 10000
+            timeout: 5000 // Reduced timeout for faster failure
         });
         
         const rss$ = cheerio.load(rssResponse.data, { xmlMode: true });
         
         rss$('item').each((i, item) => {
-            if (i < 10) {
-                const title = rss$(item).find('title').text().trim();
-                const link = rss$(item).find('link').text().trim();
-                const pubDate = rss$(item).find('pubDate').text();
-                const description = rss$(item).find('description').text().trim();
+            const title = rss$(item).find('title').text().trim();
+            const link = rss$(item).find('link').text().trim();
+            const pubDate = rss$(item).find('pubDate').text();
+            const description = rss$(item).find('description').text().trim();
+            
+            if (title && link) {
+                let formattedDate = 'Recent';
+                let dateObj = new Date(); // Default to now if no date
                 
-                if (title && link) {
-                    let formattedDate = 'Recent';
-                    if (pubDate) {
-                        try {
-                            formattedDate = new Date(pubDate).toLocaleDateString();
-                        } catch (e) {
-                            formattedDate = pubDate;
-                        }
+                if (pubDate) {
+                    try {
+                        dateObj = new Date(pubDate);
+                        formattedDate = dateObj.toLocaleDateString();
+                    } catch (e) {
+                        formattedDate = pubDate;
                     }
-                    
-                    articles.push({
-                        title,
-                        link,
-                        date: formattedDate,
-                        description: description || ''
-                    });
                 }
+                
+                articles.push({
+                    title,
+                    link,
+                    date: formattedDate,
+                    dateObj: dateObj, // Store Date object for sorting
+                    description: description || ''
+                });
             }
         });
         
+        // Sort by date (most recent first) and limit to 10
+        articles.sort((a, b) => b.dateObj - a.dateObj);
+        articles = articles.slice(0, 10);
+        
+        // Remove dateObj before returning (clean up)
+        articles = articles.map(({ dateObj, ...article }) => article);
+        
         if (articles.length > 0) {
-            console.log(`Successfully fetched ${articles.length} articles from RSS feed`);
+            console.log(`Successfully fetched ${articles.length} articles from RSS feed (sorted by most recent)`);
             return articles;
         }
     } catch (rssError) {
@@ -77,7 +101,7 @@ async function fetchYahooNews(ticker) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
             },
-            timeout: 10000
+            timeout: 5000 // Reduced timeout for faster failure
         });
 
         const $ = cheerio.load(response.data);
@@ -92,23 +116,49 @@ async function fetchYahooNews(ticker) {
         
         for (const selector of selectors) {
             $(selector).each((i, elem) => {
-                if (i < 10 && articles.length < 10) {
-                    const title = $(elem).text().trim();
-                    let link = $(elem).attr('href');
+                const title = $(elem).text().trim();
+                let link = $(elem).attr('href');
+                
+                if (title && link) {
+                    const fullLink = link.startsWith('http') ? link : `https://finance.yahoo.com${link}`;
+                    const dateElem = $(elem).closest('div').find('time, span[data-test-locator]');
+                    const dateText = dateElem.first().text().trim() || 'Recent';
                     
-                    if (title && link) {
-                        const fullLink = link.startsWith('http') ? link : `https://finance.yahoo.com${link}`;
-                        const dateElem = $(elem).closest('div').find('time, span[data-test-locator]');
-                        const date = dateElem.first().text().trim() || 'Recent';
-                        
-                        // Avoid duplicates
-                        if (!articles.find(a => a.title === title)) {
-                            articles.push({
-                                title,
-                                link: fullLink,
-                                date
-                            });
+                    // Try to parse date from text
+                    let dateObj = new Date();
+                    try {
+                        // Try to parse relative dates like "2h ago", "1d ago", etc.
+                        const dateMatch = dateText.match(/(\d+)\s*(h|hour|d|day|m|min)/i);
+                        if (dateMatch) {
+                            const value = parseInt(dateMatch[1]);
+                            const unit = dateMatch[2].toLowerCase();
+                            dateObj = new Date();
+                            if (unit === 'h' || unit === 'hour') {
+                                dateObj.setHours(dateObj.getHours() - value);
+                            } else if (unit === 'd' || unit === 'day') {
+                                dateObj.setDate(dateObj.getDate() - value);
+                            } else if (unit === 'm' || unit === 'min') {
+                                dateObj.setMinutes(dateObj.getMinutes() - value);
+                            }
+                        } else {
+                            // Try parsing as absolute date
+                            dateObj = new Date(dateText);
+                            if (isNaN(dateObj.getTime())) {
+                                dateObj = new Date(); // Fallback to now
+                            }
                         }
+                    } catch (e) {
+                        dateObj = new Date(); // Fallback to now
+                    }
+                    
+                    // Avoid duplicates
+                    if (!articles.find(a => a.title === title)) {
+                        articles.push({
+                            title,
+                            link: fullLink,
+                            date: dateText,
+                            dateObj: dateObj
+                        });
                     }
                 }
             });
@@ -116,8 +166,15 @@ async function fetchYahooNews(ticker) {
             if (articles.length > 0) break;
         }
         
+        // Sort by date (most recent first) and limit to 10
+        articles.sort((a, b) => b.dateObj - a.dateObj);
+        articles = articles.slice(0, 10);
+        
+        // Remove dateObj before returning
+        articles = articles.map(({ dateObj, ...article }) => article);
+        
         if (articles.length > 0) {
-            console.log(`Successfully scraped ${articles.length} articles from web page`);
+            console.log(`Successfully scraped ${articles.length} articles from web page (sorted by most recent)`);
             return articles;
         }
     } catch (scrapeError) {
@@ -130,8 +187,20 @@ async function fetchYahooNews(ticker) {
     return articles;
 }
 
-// Summarize articles using Hugging Face model
-async function summarizeArticles(articles) {
+// Fast summary generation (no AI, instant)
+function generateFastSummary(articles) {
+    if (!articles || articles.length === 0) {
+        return 'No recent news articles found for this ticker.';
+    }
+
+    const topArticles = articles.slice(0, 3);
+    const topics = topArticles.map(a => a.title).join('; ');
+    
+    return `Recent news highlights: ${topArticles.length > 0 ? topics : 'No recent updates'}. Check the articles below for more details.`;
+}
+
+// Summarize articles using Hugging Face model (slower, but more intelligent)
+async function summarizeArticlesWithAI(articles) {
     if (!articles || articles.length === 0) {
         return 'No recent news articles found for this ticker.';
     }
@@ -144,7 +213,7 @@ async function summarizeArticles(articles) {
 
     // If text is too short, add more context
     if (newsText.length < 50) {
-        return `Recent news highlights: ${articles.slice(0, 3).map(a => a.title).join('; ')}.`;
+        return generateFastSummary(articles);
     }
 
     try {
@@ -180,23 +249,44 @@ async function summarizeArticles(articles) {
         return summaryText || 'Summary generated successfully.';
     } catch (error) {
         console.error('Summarization error:', error.message);
-        console.error('Error details:', error.response?.data || error);
-        
-        // Fallback: Create a simple summary from titles
-        const fallbackSummary = `Recent news highlights: ${articles.slice(0, 3).map(a => a.title).join('; ')}.`;
-        
-        if (error.message.includes('API key') || error.message.includes('rate limit') || error.message.includes('401')) {
-            return `${fallbackSummary} Note: For full AI summarization, add your Hugging Face API key to the environment variable HF_API_KEY.`;
-        }
-        
-        if (error.message.includes('503') || error.message.includes('timeout')) {
-            return `${fallbackSummary} (AI summarization temporarily unavailable)`;
-        }
-        
-        // If model fails, return a basic summary
-        return fallbackSummary;
+        // Fallback to fast summary
+        return generateFastSummary(articles);
     }
 }
+
+// Cache helper functions
+function getCachedResult(ticker) {
+    const cached = cache.get(ticker);
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+        console.log(`✅ Cache HIT for ${ticker}`);
+        return cached.data;
+    }
+    if (cached) {
+        // Expired, remove it
+        cache.delete(ticker);
+    }
+    console.log(`❌ Cache MISS for ${ticker}`);
+    return null;
+}
+
+function setCachedResult(ticker, data) {
+    cache.set(ticker, {
+        data,
+        timestamp: Date.now()
+    });
+    console.log(`💾 Cached result for ${ticker}`);
+}
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [ticker, cached] of cache.entries()) {
+        if (now - cached.timestamp >= CACHE_TTL) {
+            cache.delete(ticker);
+            console.log(`🗑️  Removed expired cache for ${ticker}`);
+        }
+    }
+}, 60000); // Clean up every minute
 
 // Main API endpoint
 app.post('/api/analyze', async (req, res) => {
@@ -214,6 +304,13 @@ app.post('/api/analyze', async (req, res) => {
             return res.status(400).json({ error: 'Invalid ticker symbol' });
         }
 
+        // Check cache first
+        const cachedResult = getCachedResult(cleanTicker);
+        if (cachedResult) {
+            console.log(`⚡ Returning cached result for ${cleanTicker}`);
+            return res.json(cachedResult);
+        }
+
         console.log(`\n=== Fetching news for ticker: ${cleanTicker} ===`);
 
         // Fetch news articles
@@ -229,31 +326,62 @@ app.post('/api/analyze', async (req, res) => {
 
         if (articles.length === 0) {
             console.log(`No articles found for ${cleanTicker}`);
-            return res.json({
+            const result = {
                 ticker: cleanTicker,
                 summary: `No recent news articles found for ${cleanTicker}. The ticker may be invalid or there may be no recent news. Please verify the ticker symbol is correct.`,
                 articles: []
-            });
+            };
+            // Cache empty results too (shorter TTL could be used, but keeping it simple)
+            setCachedResult(cleanTicker, result);
+            return res.json(result);
         }
 
         console.log(`Found ${articles.length} articles, generating summary...`);
 
-        // Summarize the news
+        // Use fast summary (instant) instead of AI summarization for speed
+        // Set USE_AI_SUMMARY=true in environment to enable AI summarization
+        const useAISummary = process.env.USE_AI_SUMMARY === 'true';
+        
         let summary;
-        try {
-            summary = await summarizeArticles(articles);
-            console.log('Summary generated successfully');
-        } catch (summaryError) {
-            console.error('Error in summarizeArticles:', summaryError);
-            // Still return articles even if summarization fails
-            summary = `Found ${articles.length} recent news articles. Check the list below for details.`;
+        if (useAISummary) {
+            try {
+                summary = await summarizeArticlesWithAI(articles);
+                console.log('AI Summary generated successfully');
+            } catch (summaryError) {
+                console.error('Error in AI summarization:', summaryError);
+                summary = generateFastSummary(articles);
+            }
+        } else {
+            // Fast mode - instant summary
+            summary = generateFastSummary(articles);
+            console.log('Fast summary generated');
         }
 
-        res.json({
+        // Perform sentiment analysis
+        let sentimentResult = null;
+        let metrics = null;
+        try {
+            console.log('Analyzing sentiment...');
+            sentimentResult = await sentimentAnalyzer.analyzeArticles(articles);
+            metrics = await sentimentAnalyzer.getMetrics();
+            console.log(`Sentiment: ${sentimentResult.sentiment} (confidence: ${sentimentResult.confidence})`);
+        } catch (sentimentError) {
+            console.error('Error in sentiment analysis:', sentimentError);
+            // Continue without sentiment if it fails
+        }
+
+        const result = {
             ticker: cleanTicker,
             summary,
-            articles
-        });
+            articles,
+            sentiment: sentimentResult,
+            metrics: metrics
+        };
+
+        // Cache the result
+        setCachedResult(cleanTicker, result);
+
+        res.json(result);
     } catch (error) {
         console.error('Unexpected error in /api/analyze:', error);
         console.error('Error stack:', error.stack);
@@ -289,6 +417,8 @@ app.get('/api/test/:ticker', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Trading Assistant backend server running on http://localhost:${PORT}`);
-    console.log(`📝 Note: Add HF_API_KEY environment variable for better rate limits on Hugging Face API`);
+    console.log(`⚡ Fast mode enabled - AI summarization disabled for speed`);
+    console.log(`📝 To enable AI summarization, set USE_AI_SUMMARY=true environment variable`);
+    console.log(`📝 Add HF_API_KEY environment variable for better rate limits on Hugging Face API`);
 });
 

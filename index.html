@@ -38,7 +38,8 @@
                 <p>⌘+Shift+W: Toggle watch mode</p>
                 <p>⌘+Shift+C: Capture ticker from clipboard</p>
                 <p>⌘+Shift+T: Toggle overlay</p>
-                <p class="watch-mode-hint">💡 In watch mode, just copy any ticker symbol and a popup will appear!</p>
+                <p class="watch-mode-hint">💡 <strong>Enable Watch Mode</strong>, then copy any ticker (Cmd+C) - it will be analyzed automatically!</p>
+                <p style="font-size: 11px; color: #666; margin-top: 5px;">💡 Tip: Or press <strong>Cmd+Shift+X</strong> to analyze the current clipboard content</p>
             </div>
 
             <div id="loading" class="loading hidden">
@@ -48,6 +49,7 @@
 
             <div id="results" class="results hidden">
                 <h3 id="tickerTitle"></h3>
+                <div id="sentiment"></div>
                 <div id="summary"></div>
                 <div id="articles"></div>
             </div>

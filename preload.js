@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWatchMode: () => ipcRenderer.invoke('get-watch-mode'),
   hideOverlay: () => ipcRenderer.send('hide-overlay'),
   startDrag: () => ipcRenderer.send('start-drag'),
+  captureSelectedText: () => ipcRenderer.invoke('capture-selected-text'),
   onTickerCaptured: (callback) => {
     ipcRenderer.on('ticker-captured', (event, ticker) => callback(ticker));
   },

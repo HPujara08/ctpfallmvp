@@ -1,15 +1,47 @@
 const popupTicker = document.getElementById('popupTicker');
 const closePopupBtn = document.getElementById('closePopupBtn');
 const popupLoading = document.getElementById('popupLoading');
+const popupSentiment = document.getElementById('popupSentiment');
 const popupSummary = document.getElementById('popupSummary');
 const popupArticles = document.getElementById('popupArticles');
 
 // Listen for data from main process
 window.popupAPI.onPopupData((data) => {
-    const { ticker, summary, articles } = data;
+    const { ticker, summary, articles, sentiment, metrics } = data;
     
     popupTicker.textContent = `${ticker} News`;
     popupLoading.classList.add('hidden');
+    
+    // Display sentiment
+    if (sentiment && metrics) {
+        const sentimentValue = sentiment.sentiment.toLowerCase();
+        let sentimentClass = 'neutral';
+        let sentimentEmoji = '➡️';
+        
+        if (sentimentValue === 'positive') {
+            sentimentClass = 'positive';
+            sentimentEmoji = '📈';
+        } else if (sentimentValue === 'negative') {
+            sentimentClass = 'negative';
+            sentimentEmoji = '📉';
+        } else {
+            sentimentClass = 'neutral';
+            sentimentEmoji = '➡️';
+        }
+        
+        popupSentiment.innerHTML = `
+            <div class="sentiment-box-small ${sentimentClass}">
+                <h4>${sentimentEmoji} ${sentiment.sentiment.toUpperCase()} (${(sentiment.confidence * 100).toFixed(1)}%)</h4>
+                <div class="metrics-inline">
+                    <span>A: ${(metrics.accuracy * 100).toFixed(0)}%</span>
+                    <span>P: ${(metrics.precision * 100).toFixed(0)}%</span>
+                    <span>R: ${(metrics.recall * 100).toFixed(0)}%</span>
+                    <span>F1: ${(metrics.f1_score * 100).toFixed(0)}%</span>
+                </div>
+            </div>
+        `;
+        popupSentiment.classList.remove('hidden');
+    }
     
     // Display summary
     if (summary) {

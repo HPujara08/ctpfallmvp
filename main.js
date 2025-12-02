@@ -1,7 +1,10 @@
-const { app, BrowserWindow, globalShortcut, clipboard, ipcMain, Notification } = require('electron');
+const { app, BrowserWindow, globalShortcut, clipboard, ipcMain, Notification, screen } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const axios = require('axios');
+
+// Import modular components
+const TickerAnalyzer = require('./modules/ticker-analyzer');
 
 let overlayWindow = null;
 let popupWindow = null;
@@ -9,6 +12,21 @@ let backendServer = null;
 let watchModeEnabled = false;
 let clipboardMonitor = null;
 let lastClipboardText = '';
+
+// Initialize ticker analyzer
+const tickerAnalyzer = new TickerAnalyzer();
+
+// Set up ticker analyzer callbacks
+tickerAnalyzer.setAnalysisCallback((ticker, data) => {
+  createPopupWindow(ticker, data);
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.webContents.send('ticker-captured', ticker);
+  }
+});
+
+tickerAnalyzer.setErrorCallback((error) => {
+  console.error('Ticker analysis error:', error.message);
+});
 
 function createOverlayWindow() {
   overlayWindow = new BrowserWindow({
@@ -43,63 +61,76 @@ function createOverlayWindow() {
 }
 
 function createPopupWindow(ticker, data) {
-  // Close existing popup if any
-  if (popupWindow) {
-    popupWindow.close();
-  }
-
-  const screen = require('electron').screen;
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-
-  popupWindow = new BrowserWindow({
-    width: 450,
-    height: 500,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    movable: true,
-    x: width - 470,
-    y: 20,
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'popup-preload.js')
-    }
-  });
-
-  popupWindow.loadFile('popup.html');
-  
-  // Ensure window stays on top of all windows including browser
-  popupWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-  
-  // Make window visible on all spaces/desktops (macOS)
-  if (process.platform === 'darwin') {
-    popupWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  }
-  
-  // Send data to popup when ready
-  popupWindow.webContents.once('did-finish-load', () => {
-    popupWindow.webContents.send('popup-data', { ticker, ...data });
-  });
-
-  popupWindow.on('closed', () => {
-    popupWindow = null;
-  });
-
-  // Auto-close after 30 seconds
-  setTimeout(() => {
-    if (popupWindow) {
+  try {
+    // Close existing popup if any
+    if (popupWindow && !popupWindow.isDestroyed()) {
       popupWindow.close();
+      popupWindow = null;
     }
-  }, 30000);
+
+    const screen = require('electron').screen;
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width, height } = primaryDisplay.workAreaSize;
+
+    popupWindow = new BrowserWindow({
+      width: 450,
+      height: 500,
+      frame: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      movable: true,
+      x: width - 470,
+      y: 20,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'popup-preload.js')
+      }
+    });
+
+    popupWindow.loadFile('popup.html');
+    
+    // Ensure window stays on top of all windows including browser
+    popupWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    
+    // Make window visible on all spaces/desktops (macOS)
+    if (process.platform === 'darwin') {
+      popupWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    }
+    
+    // Send data to popup when ready
+    popupWindow.webContents.once('did-finish-load', () => {
+      if (popupWindow && !popupWindow.isDestroyed()) {
+        popupWindow.webContents.send('popup-data', { ticker, ...data });
+      }
+    });
+
+    popupWindow.on('closed', () => {
+      popupWindow = null;
+    });
+
+    // Handle errors during window creation
+    popupWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+      console.error('Popup window failed to load:', errorCode, errorDescription);
+    });
+
+    // Auto-close after 30 seconds
+    setTimeout(() => {
+      if (popupWindow && !popupWindow.isDestroyed()) {
+        popupWindow.close();
+      }
+    }, 30000);
+  } catch (error) {
+    console.error('Error creating popup window:', error);
+    popupWindow = null;
+  }
 }
 
 // Handle close popup IPC
 ipcMain.on('close-popup', () => {
-  if (popupWindow) {
+  if (popupWindow && !popupWindow.isDestroyed()) {
     popupWindow.close();
   }
 });
@@ -124,42 +155,61 @@ ipcMain.on('start-drag', (event) => {
   }
 });
 
-// Ticker detection pattern: 1-5 uppercase letters/numbers, optionally with dots
+// Helper function for backward compatibility
 function isTickerSymbol(text) {
-  if (!text) return false;
-  
-  // Remove whitespace
-  const cleaned = text.trim().toUpperCase();
-  
-  // Check if it's 1-5 characters, alphanumeric, possibly with dots
-  // Common patterns: AAPL, TSLA, BRK.B, etc.
-  const tickerPattern = /^[A-Z0-9]{1,5}(\.[A-Z])?$/;
-  
-  // Also check if it's just uppercase letters (common ticker format)
-  const simplePattern = /^[A-Z]{1,5}$/;
-  
-  return tickerPattern.test(cleaned) || simplePattern.test(cleaned);
+  return tickerAnalyzer.isValidTicker(text);
 }
 
+
 function startClipboardMonitoring() {
-  if (clipboardMonitor) return; // Already monitoring
+  if (clipboardMonitor) {
+    console.log('⚠️ Clipboard monitoring already active');
+    return; // Already monitoring
+  }
   
-  lastClipboardText = clipboard.readText();
+  // Initialize with trimmed clipboard content
+  const initialClipboard = clipboard.readText() || '';
+  lastClipboardText = initialClipboard.trim();
+  let lastProcessTime = 0;
+  
+  console.log('📋 Starting clipboard monitoring...');
+  console.log(`📋 Initial clipboard: "${lastClipboardText}"`);
   
   clipboardMonitor = setInterval(() => {
     try {
-      const currentText = clipboard.readText().trim();
+      const currentText = clipboard.readText() || '';
+      const trimmedText = currentText.trim();
+      const lastTrimmed = lastClipboardText.trim();
       
-      // Only process if clipboard changed and looks like a ticker
-      if (currentText && currentText !== lastClipboardText && isTickerSymbol(currentText)) {
-        lastClipboardText = currentText;
-        console.log(`Detected ticker in clipboard: ${currentText}`);
+      // Only process if clipboard changed
+      if (trimmedText && trimmedText !== lastTrimmed) {
+        console.log(`📋 Clipboard changed from "${lastTrimmed}" to "${trimmedText}"`);
         
-        // Automatically analyze the ticker
-        analyzeTickerAndShowPopup(currentText);
+        // Update lastClipboardText immediately to prevent re-processing
+        lastClipboardText = trimmedText;
+        
+        // Check if it's a valid ticker
+        const isValid = tickerAnalyzer.isValidTicker(trimmedText);
+        console.log(`📋 Is valid ticker: ${isValid}`);
+        
+        if (isValid) {
+          const now = Date.now();
+          // Debounce: only process once every 2 seconds
+          if (now - lastProcessTime > 2000) {
+            lastProcessTime = now;
+            console.log(`✅ Detected ticker in clipboard: ${trimmedText}`);
+            tickerAnalyzer.analyze(trimmedText);
+          } else {
+            const secondsAgo = Math.floor((now - lastProcessTime) / 1000);
+            console.log(`⏸️ Debouncing - last processed ${secondsAgo}s ago (need 2s)`);
+          }
+        } else {
+          console.log(`⚠️ "${trimmedText}" is not a valid ticker symbol`);
+        }
       }
     } catch (error) {
       // Ignore clipboard read errors
+      console.error('❌ Clipboard monitoring error:', error.message);
     }
   }, 500); // Check every 500ms
 }
@@ -171,28 +221,17 @@ function stopClipboardMonitoring() {
   }
 }
 
-async function analyzeTickerAndShowPopup(ticker) {
-  try {
-    const response = await axios.post('http://localhost:3001/api/analyze', {
-      ticker: ticker.toUpperCase()
-    });
-    
-    const data = response.data;
-    
-    if (data.error) {
-      console.error('Error analyzing ticker:', data.error);
-      return;
-    }
-    
-    // Show popup with results
-    createPopupWindow(ticker.toUpperCase(), data);
-    
-    // Also update overlay if it's open
-    if (overlayWindow) {
-      overlayWindow.webContents.send('ticker-captured', ticker.toUpperCase());
-    }
-  } catch (error) {
-    console.error('Error in analyzeTickerAndShowPopup:', error);
+// Function to capture ticker from clipboard (for shortcut)
+function captureTickerFromClipboard() {
+  const clipboardText = clipboard.readText().trim();
+  
+  if (clipboardText && tickerAnalyzer.isValidTicker(clipboardText)) {
+    console.log(`✅ Analyzing ticker from clipboard: ${clipboardText}`);
+    tickerAnalyzer.analyze(clipboardText);
+  } else if (clipboardText) {
+    console.log(`⚠️ Clipboard contains "${clipboardText}" which is not a valid ticker`);
+  } else {
+    console.log('⚠️ Clipboard is empty');
   }
 }
 
@@ -242,13 +281,30 @@ app.whenReady().then(() => {
       if (overlayWindow) {
         overlayWindow.webContents.send('watch-mode-changed', true);
       }
+      console.log('✅ Watch mode enabled!');
+      console.log('💡 Just copy any ticker symbol (Cmd+C) and it will be analyzed automatically');
     } else {
       stopClipboardMonitoring();
       if (overlayWindow) {
         overlayWindow.webContents.send('watch-mode-changed', false);
       }
+      console.log('⏸️ Watch mode disabled');
     }
   });
+  
+
+  // Register shortcut to analyze ticker from clipboard (Cmd+Shift+X)
+  const shortcutRegistered = globalShortcut.register('CommandOrControl+Shift+X', () => {
+    console.log('⌨️ Shortcut Cmd+Shift+X pressed!');
+    captureTickerFromClipboard();
+  });
+  
+  if (shortcutRegistered) {
+    console.log('✅ Shortcut Cmd+Shift+X registered successfully');
+    console.log('💡 Copy a ticker (Cmd+C), then press Cmd+Shift+X to analyze it');
+  } else {
+    console.error('❌ Failed to register shortcut Cmd+Shift+X - it may already be in use');
+  }
 });
 
 app.on('window-all-closed', () => {
@@ -288,12 +344,24 @@ ipcMain.handle('analyze-ticker', async (event, ticker) => {
   }
 });
 
+// Handler to capture selected text and analyze if it's a ticker
+ipcMain.handle('capture-selected-text', () => {
+  return new Promise((resolve) => {
+    captureSelectedTextAndAnalyze();
+    // Return immediately - the analysis happens asynchronously
+    resolve({ success: true, message: 'Capturing selected text...' });
+  });
+});
+
 ipcMain.handle('toggle-watch-mode', () => {
   watchModeEnabled = !watchModeEnabled;
   if (watchModeEnabled) {
     startClipboardMonitoring();
+    console.log('✅ Watch mode enabled!');
+    console.log('💡 Copy any ticker (Cmd+C) and it will be analyzed automatically');
   } else {
     stopClipboardMonitoring();
+    console.log('⏸️ Watch mode disabled');
   }
   return watchModeEnabled;
 });
